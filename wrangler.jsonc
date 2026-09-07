@@ -1,0 +1,9 @@
+{
+  "name": "astra-art-shuffle",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-09-07",
+  "workers_dev": true,
+  "kv_namespaces": [{"binding": "CATALOG"}],
+  "triggers": {"crons": ["17 6 * * *"]},
+  "observability": {"enabled": true}
+}

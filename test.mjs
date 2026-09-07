@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import {randomIndex, handle} from './handler.mjs';
+import worker from './worker.mjs';
+let calls = 0;
+assert.equal(randomIndex(3, a => { a[0] = calls++ === 0 ? 4294967295 : 5; }), 2);
+assert.equal(calls, 2); // Reject tail values rather than introducing modulo bias.
+const pool = [['example', 1, 900]];
+let r = handle(new Request('https://test/random'), pool);
+assert.match(await r.text(), /!900,900/);
+assert.equal(r.headers.get('Cache-Control'), 'no-store');
+r = handle(new Request('https://test/image?size=0'), pool);
+assert.equal(r.status, 302);
+assert.match(r.headers.get('Location'), /full\/full/);
+assert.equal(handle(new Request('https://test/random?size=-1'), pool).status, 400);
+assert.equal(handle(new Request('https://test/unknown'), pool).status, 404);
+assert.equal(handle(new Request('https://test/random', {method:'POST'}), pool).status, 405);
+r = await worker.fetch(new Request('https://test/random?format=json'));
+const data = await r.json();
+assert.equal(data.pool_size, 58261);
+assert.match(data.url, /^https:\/\/api\.nga\.gov\/iiif\/[0-9a-f-]+\/full\/!\d+,\d+\/0\/default\.jpg$/);
+console.log('Passed: unbiased index rejection, sizing, no-store, redirects, errors, bundled catalog');
