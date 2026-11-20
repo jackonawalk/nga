@@ -46,6 +46,26 @@ assert.equal(bad.status, 400);
 assert.match(await bad.text(), /painting, print, decorative-art/);
 assert.equal(handle(new Request('https://test/random?type='), typed, types).status, 400);
 assert.equal(handle(new Request('https://test/image?type=print&from=1700&to=1750'), typed, types).status, 404);
+// Highlights: 1 = custom print, 2 = on view, 3 = both; several values match either.
+const lit = [['a', 1, 900, 1860, 1860, 0, 1], ['b', 2, 900, 1860, 1860, 0, 2],
+  ['c', 3, 900, 1860, 1860, 0, 3], ['d', 4, 900, 1860, 1860, 0, 0], ['e', 5, 900, 1860, 1860, 1, 1]];
+const hl = async query => handle(new Request(`https://test/random?format=json&${query}`), lit, types).json();
+assert.equal((await hl('highlights=print')).pool_size, 3);
+assert.equal((await hl('highlights=on-view')).pool_size, 2);
+assert.equal((await hl('highlights=print,On-View')).pool_size, 4);
+assert.equal((await hl('highlights=print&type=painting')).pool_size, 2);
+for (let i = 0; i < 20; i++) assert.notEqual((await hl('highlights=print,on-view')).object_id, 4);
+for (let i = 0; i < 20; i++) assert.equal((await hl('highlights=on-view&type=painting&from=1850&to=1899')).pool_size, 2);
+assert.deepEqual((await hl('highlights=print&type=print')).highlights, ['print']);
+const both = lit.filter(e => e[1] === 3);
+assert.deepEqual((await handle(new Request('https://test/random?format=json'), both, types).json()).highlights, ['print', 'on-view']);
+assert.deepEqual((await handle(new Request('https://test/random?format=json'), [['x', 9, 900]], types).json()).highlights, []);
+for (const badValue of ['famous', '', 'print,', 'constructor', '__proto__']) {
+  const response = handle(new Request(`https://test/random?highlights=${badValue}`), lit, types);
+  assert.equal(response.status, 400, badValue);
+}
+assert.match(await handle(new Request('https://test/random?highlights=x'), lit, types).text(), /print, on-view/);
+assert.equal(handle(new Request('https://test/image?highlights=print&type=sculpture'), lit, ['painting', 'print', 'sculpture']).status, 404);
 r = await worker.fetch(new Request('https://test/random?format=json'));
 const data = await r.json();
 assert.ok(data.pool_size > 50000);
@@ -56,4 +76,7 @@ assert.ok(late.begin_year >= 1850 && late.end_year <= 1899);
 const paintings = await (await worker.fetch(new Request('https://test/random?format=json&type=painting&from=1850&to=1899'))).json();
 assert.equal(paintings.type, 'painting');
 assert.ok(paintings.pool_size > 500 && paintings.pool_size < late.pool_size);
-console.log('Passed: unbiased index rejection, sizing, no-store, redirects, errors, year and type filters, bundled catalog');
+const famous = await (await worker.fetch(new Request('https://test/random?format=json&type=painting&from=1850&to=1899&highlights=print'))).json();
+assert.ok(famous.highlights.includes('print'));
+assert.ok(famous.pool_size > 50 && famous.pool_size < paintings.pool_size);
+console.log('Passed: unbiased index rejection, sizing, no-store, redirects, errors, year, type and highlight filters, bundled catalog');

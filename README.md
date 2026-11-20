@@ -39,7 +39,7 @@ Replace YOUR_HOST with the actual hostname supplied by your hosting provider.
 
 - `https://YOUR_HOST/random` returns just a direct JPEG URL as plain text.
 - `https://YOUR_HOST/random?format=json` returns JSON with url, object_id,
-  begin_year, end_year, type, open_access and pool_size fields. pool_size is the
+  begin_year, end_year, type, highlights, open_access and pool_size fields. pool_size is the
   number of artworks matching any filters.
 - `https://YOUR_HOST/image` sends an HTTP 302 redirect to a random image.
 - Add `?size=3000` for a different maximum edge, or `?size=0` for full resolution.
@@ -55,6 +55,12 @@ Replace YOUR_HOST with the actual hostname supplied by your hosting provider.
   with commas, e.g. `type=painting,drawing`. Combine with years, e.g.
   `/image?type=painting&from=1850&to=1899`. Prints and drawings make up most of
   the catalog, so unfiltered results are mostly works on paper.
+- Add `highlights` to favor well-known works. NGA has no popularity field, so
+  this uses two proxies: `print` (NGA sells a custom print of the work, about
+  400 works, its de facto greatest hits) and `on-view` (on display in an NGA
+  gallery at the last catalog rebuild, about 2,000 works). `highlights=print,on-view`
+  matches either. For example, `/image?type=painting&from=1850&to=1899&highlights=print`
+  picks from about 150 well-known late 19th-century paintings.
 
 Default size is 2000 pixels on the longest edge, preserving aspect ratio without
 requesting an enlargement of smaller originals. Allowed sizes are 200–8000, or 0.

@@ -22,8 +22,10 @@ with open(sys.argv[1], encoding='utf-8-sig', newline='') as f:
         if edge > 0:
             rows.setdefault(object_id, [r['uuid'], int(object_id), edge])
 assert len(rows) > 0
-# Append [begin, end, typeIndex] from objects.csv. Years are null when unknown;
-# typeIndex points into `types` (NGA's normalized visualbrowserclassification).
+# Append [begin, end, typeIndex, highlightFlags] from objects.csv. Years are null
+# when unknown; typeIndex points into `types` (NGA's normalized
+# visualbrowserclassification). Flags must match HIGHLIGHTS in handler.mjs:
+# 1 = NGA sells a custom print (customprinturl), 2 = on view (locationid).
 types, extra = [], {}
 with open(sys.argv[2], encoding='utf-8-sig', newline='') as f:
     for r in csv.DictReader(f):
@@ -37,9 +39,10 @@ with open(sys.argv[2], encoding='utf-8-sig', newline='') as f:
         kind = r['visualbrowserclassification'].strip().lower() or None
         if kind and kind not in types:
             types.append(kind)
-        extra[r['objectid']] = [begin, end, types.index(kind) if kind else None]
+        flags = (1 if r['customprinturl'].strip() else 0) | (2 if r['locationid'].strip() else 0)
+        extra[r['objectid']] = [begin, end, types.index(kind) if kind else None, flags]
 for object_id, row in rows.items():
-    row += extra.get(object_id, [None, None, None])
+    row += extra.get(object_id, [None, None, None, 0])
 root = Path(__file__).resolve().parent
 handler = (root / 'handler.mjs').read_text()
 (root / 'worker.mjs').write_text(

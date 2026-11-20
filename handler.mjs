@@ -5,7 +5,10 @@ export function randomIndex(n, fill = a => crypto.getRandomValues(a)) {
   return value[0] % n;
 }
 
-// types: artwork type names indexed by each catalog entry's sixth field.
+// Catalog entry: [uuid, objectId, longestEdge, beginYear, endYear, typeIndex, highlightFlags].
+// types: artwork type names indexed by typeIndex. highlightFlags is a bitmask of HIGHLIGHTS.
+export const HIGHLIGHTS = {print: 1, 'on-view': 2};
+
 export function handle(request, catalog, types = []) {
   const headers = {'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*'};
   const reply = (text, status = 200, extra = {}) => new Response(text, {
@@ -43,12 +46,22 @@ export function handle(request, catalog, types = []) {
       wanted.add(index);
     }
   }
+  // highlights=print (NGA sells a print), on-view (on display); several match either.
+  const highlightParam = url.searchParams.get('highlights');
+  let mask = 0;
+  if (highlightParam !== null) {
+    for (const name of highlightParam.toLowerCase().split(',')) {
+      const bit = Object.hasOwn(HIGHLIGHTS, name.trim()) ? HIGHLIGHTS[name.trim()] : 0;
+      if (!bit) return reply(`highlights must be one or more of: ${Object.keys(HIGHLIGHTS).join(', ')}`, 400);
+      mask |= bit;
+    }
+  }
   const dated = 'from' in years || 'to' in years;
-  const pool = dated || wanted ? catalog.filter(([, , , begin, end, type]) =>
+  const pool = dated || wanted || mask ? catalog.filter(([, , , begin, end, type, flags]) =>
     (!dated || (begin != null && !(begin < years.from) && !(end > years.to)))
-    && (!wanted || wanted.has(type))) : catalog;
+    && (!wanted || wanted.has(type)) && (!mask || (flags & mask))) : catalog;
   if (!pool.length) return reply('No artworks match those filters', 404);
-  const [uuid, objectId, longestEdge, beginYear, endYear, typeIndex] = pool[randomIndex(pool.length)];
+  const [uuid, objectId, longestEdge, beginYear, endYear, typeIndex, flags = 0] = pool[randomIndex(pool.length)];
   const edge = Math.min(size, longestEdge);
   const imageUrl = `https://api.nga.gov/iiif/${uuid}/full/${size === 0 ? 'full' : `!${edge},${edge}`}/0/default.jpg`;
   if (url.pathname === '/image') return new Response(null, {
@@ -56,7 +69,8 @@ export function handle(request, catalog, types = []) {
   });
   if (format === 'json') return reply(JSON.stringify({url: imageUrl, object_id: objectId,
     begin_year: beginYear ?? null, end_year: endYear ?? null,
-    type: types[typeIndex]?.replaceAll(' ', '-') ?? null, open_access: true,
+    type: types[typeIndex]?.replaceAll(' ', '-') ?? null,
+    highlights: Object.keys(HIGHLIGHTS).filter(name => flags & HIGHLIGHTS[name]), open_access: true,
     pool_size: pool.length}), 200, {'Content-Type': 'application/json'});
   return reply(imageUrl);
 }
