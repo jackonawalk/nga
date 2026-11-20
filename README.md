@@ -1,116 +1,172 @@
 # Astra Art Shuffle
 
-A small API that selects uniformly from 63,890 distinct open-access NGA artworks.
-The catalog is bundled on the server. Each request returns one URL, or redirects
-to one image; your phone never downloads or splits the catalog.
+A tiny API that serves a random artwork from the
+[National Gallery of Art](https://www.nga.gov)'s open-access collection.
+Ask for an image and you get a different public-domain masterpiece every time,
+which makes it a great source for a daily wallpaper, a screensaver, or a
+"picture of the day" widget.
 
-## Cloudflare Worker
+You can narrow the pool by date, by type of artwork, and to the gallery's
+best-known works:
 
-From the project folder:
+```
+/image?type=painting&from=1850&to=1899&highlights=print
+```
+
+That request picks from about 150 well-known late 19th-century paintings,
+including works by Degas, Manet, Renoir, Homer, Whistler and Sargent.
+
+- **63,890 open-access artworks** from NGA's published open data
+- **Runs on the Cloudflare Workers free plan**, or any Node.js 22+ host
+- **No API keys, database, or secrets**: the catalog is bundled into the Worker
+- **Lightweight**: the API returns a link or a redirect; images are served directly by NGA
+
+> This is an independent project and is not affiliated with or endorsed by the
+> National Gallery of Art.
+
+## Endpoints
+
+| Endpoint | Returns |
+|---|---|
+| `GET /image` | An HTTP 302 redirect to a random image. Most clients follow it automatically and get the JPEG. |
+| `GET /random` | The image URL as plain text. |
+| `GET /random?format=json` | JSON with details about the chosen artwork (see below). |
+
+Every request picks independently and uniformly at random from the artworks
+matching your filters, so repeats are possible but rare. Responses are never
+cached.
+
+### Query parameters
+
+All parameters are optional and work on both `/image` and `/random`.
+
+| Parameter | Example | Description |
+|---|---|---|
+| `size` | `size=3000` | Longest edge in pixels, 200–8000 (default 2000). Images are never enlarged beyond the original. Use `size=0` for full resolution. |
+| `from`, `to` | `from=1850&to=1899` | Creation years. An artwork matches only if its entire recorded date range falls inside the filter. Either can be used alone. |
+| `type` | `type=painting` | `painting`, `drawing`, `print`, `photograph`, `sculpture`, `decorative-art`, `portfolio`, `volume` or `technical-material`. Comma-separate to allow several, e.g. `type=painting,drawing`. |
+| `highlights` | `highlights=print` | Favor well-known works: `print` (about 400 works NGA sells as custom prints, effectively its greatest hits) or `on-view` (about 2,000 works on display in the galleries when the catalog was built). `print,on-view` matches either. |
+| `format` | `format=json` | `/random` only: `text` (default) or `json`. |
+
+Prints and drawings make up most of the collection, so unfiltered requests
+mostly return works on paper. Add `type=painting` if you want paintings.
+
+Invalid parameters return `400` with a message listing the accepted values.
+If no artwork matches your filters, the response is `404`.
+
+### JSON response
+
+```json
+{
+  "url": "https://api.nga.gov/iiif/4eea1722-7227-4a93-97fd-fe679520cf5b/full/!2000,2000/0/default.jpg",
+  "object_id": 103923,
+  "begin_year": 1895,
+  "end_year": 1895,
+  "type": "painting",
+  "highlights": ["print"],
+  "open_access": true,
+  "pool_size": 150
+}
+```
+
+`pool_size` is the number of artworks that matched your filters. `object_id`
+is NGA's artwork ID, which you can use to look the work up in NGA's open data.
+
+## Daily wallpaper with Apple Shortcuts
+
+1. Create a Personal Automation (for example, **Time of Day** at 4:00 AM).
+2. Add **Get Contents of URL** with your endpoint, e.g.
+   `https://YOUR_HOST/image?type=painting&highlights=print`.
+3. Add **Set Wallpaper**, using **Contents of URL** as the image.
+
+Use `/image` with a single Get Contents of URL step. It already returns the
+image, so don't add a second Get Contents of URL step; that pattern is only for
+`/random`, which returns a link. Landscape artworks may be cropped to fit the
+screen.
+
+## Deploy your own
+
+### Cloudflare Workers (recommended)
+
+Requires Node.js 22+ and a Cloudflare account. The free plan is enough.
 
 ```sh
+git clone https://github.com/jackonawalk/nga.git
+cd nga
 npm ci
 npx wrangler login
 npm run deploy
 ```
 
-Node.js 22 or newer and a Cloudflare account are required; the Workers Free plan
-is sufficient. The Worker is named astra-art-shuffle. Wrangler prints the deployed
-workers.dev URL. No database, KV binding, NGA API key, or secrets are required.
-worker.mjs is self-contained, but it is large because it includes the catalog,
-so deploy with the CLI rather than pasting it into the browser editor.
+Wrangler prints your `workers.dev` URL when the deploy finishes.
 
-Cloudflare deployment instructions:
-https://developers.cloudflare.com/workers/get-started/guide/
+> **Before deploying,** edit `wrangler.jsonc`: change `name` if you like, and
+> remove the `routes` entry or replace `nga.jackonawalk.com` with your own
+> domain. A custom domain must be a zone on your Cloudflare account; see
+> [Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/).
 
-## Replit / Node.js
-
-Upload the extracted project files into a Node.js project using Node 22 or newer.
-Set its run command to `npm start` (no dependency installation is needed).
-It listens on 0.0.0.0 and uses PORT when supplied, otherwise port 3000.
-Publish as an Autoscale deployment for a persistent public endpoint; use the
-published URL in Shortcuts, not a development preview URL.
-
-https://docs.replit.com/features/publishing/deployment-types
-
-## Endpoints
-
-Replace YOUR_HOST with the actual hostname supplied by your hosting provider.
-
-- `https://YOUR_HOST/random` returns just a direct JPEG URL as plain text.
-- `https://YOUR_HOST/random?format=json` returns JSON with url, object_id,
-  begin_year, end_year, type, highlights, open_access and pool_size fields. pool_size is the
-  number of artworks matching any filters.
-- `https://YOUR_HOST/image` sends an HTTP 302 redirect to a random image.
-- Add `?size=3000` for a different maximum edge, or `?size=0` for full resolution.
-  For JSON plus a size, use `?format=json&size=3000`.
-- Add `from` and/or `to` (years) to either endpoint to limit the creation date,
-  e.g. `/image?from=1850&to=1899` for late 19th-century art. An artwork matches
-  only if its whole recorded creation range falls inside the filter, so a work
-  dated 1845–1855 is excluded from 1850–1899. Undated works (a few dozen) never
-  match a year filter. If nothing matches, the response is 404.
-- Add `type` to limit the kind of artwork, using NGA's normalized
-  classification: painting, drawing, print, photograph, sculpture,
-  decorative-art, portfolio, volume or technical-material. Separate several
-  with commas, e.g. `type=painting,drawing`. Combine with years, e.g.
-  `/image?type=painting&from=1850&to=1899`. Prints and drawings make up most of
-  the catalog, so unfiltered results are mostly works on paper.
-- Add `highlights` to favor well-known works. NGA has no popularity field, so
-  this uses two proxies: `print` (NGA sells a custom print of the work, about
-  400 works, its de facto greatest hits) and `on-view` (on display in an NGA
-  gallery at the last catalog rebuild, about 2,000 works). `highlights=print,on-view`
-  matches either. For example, `/image?type=painting&from=1850&to=1899&highlights=print`
-  picks from about 150 well-known late 19th-century paintings.
-
-Default size is 2000 pixels on the longest edge, preserving aspect ratio without
-requesting an enlargement of smaller originals. Allowed sizes are 200–8000, or 0.
-All endpoint responses use Cache-Control: no-store, including redirects.
-
-## Apple Shortcut
-
-Simplest workflow:
-1. URL: `https://YOUR_HOST/image`
-2. Get Contents of URL (GET). The redirect leads to the actual image.
-3. Set Wallpaper Photo, using the downloaded image and your chosen wallpaper.
-
-If you prefer the URL response explicitly:
-1. Get Contents of URL: `https://YOUR_HOST/random`
-2. Get Contents of URL again, using the first action's result as its URL.
-3. Set Wallpaper Photo, using the second action's result.
-
-Allow network access when iOS asks. These steps have not been tested on an iPhone.
-Landscape images may be cropped by the wallpaper action.
-
-## Randomness and catalog maintenance
-
-The catalog snapshot was built from NGA data on 2026-11-20 (63,890 artworks).
-Only primary images marked openaccess=1 are included, one entry per artwork ID.
-Selection uses Web Crypto with rejection sampling to avoid modulo bias. Each run
-is independent, so repeats are possible. There is no artist or medium balancing.
-
-The catalog does not refresh automatically. The API does not probe image
-availability or proxy image bytes; if NGA removes an image, run the shortcut again.
-To refresh, download published_images.csv and objects.csv from the official
-repository's data folder and run:
+### Any Node.js host
 
 ```sh
-python3 build_catalog.py /path/to/published_images.csv /path/to/objects.csv
+npm start
+```
+
+The server has no dependencies, listens on `0.0.0.0`, and uses `PORT` if set
+(default 3000). Use an always-on or autoscaling deployment with a stable public
+URL.
+
+## How it works
+
+`build_catalog.py` reads NGA's open data and keeps one primary image per
+artwork, only for images marked open access. For each artwork it stores the
+IIIF image ID, its dimensions, its creation years, its type, and its highlight
+flags. It then bundles that catalog together with `handler.mjs` into a single
+self-contained `worker.mjs` (about 1.9 MB gzipped).
+
+On each request the Worker filters the catalog (well under a millisecond) and
+picks an entry using `crypto.getRandomValues` with rejection sampling, so every
+matching artwork is equally likely. It then builds a
+[IIIF](https://iiif.io) URL on NGA's image server. The API never downloads or
+proxies image bytes.
+
+| File | Purpose |
+|---|---|
+| `handler.mjs` | Request handling, filters, and random selection (edit this) |
+| `build_catalog.py` | Builds the catalog from NGA's CSVs and generates `worker.mjs` |
+| `worker.mjs` | Generated Worker: `handler.mjs` plus the bundled catalog (don't edit by hand) |
+| `server.mjs` | Minimal Node.js server wrapping the Worker |
+| `test.mjs` | Tests (`npm test`) |
+
+### Updating the catalog
+
+The catalog is a snapshot, last built from NGA data on **2026-11-20**. NGA
+updates its data roughly daily, but the collection changes slowly, so
+rebuilding every few months is plenty. Download
+[`published_images.csv`](https://github.com/NationalGalleryOfArt/opendata/raw/main/data/published_images.csv)
+and [`objects.csv`](https://github.com/NationalGalleryOfArt/opendata/raw/main/data/objects.csv)
+(about 175 MB together), then run:
+
+```sh
+python3 build_catalog.py published_images.csv objects.csv
 npm test
 npm run deploy
 ```
 
-build_catalog.py combines handler.mjs with the catalog to generate worker.mjs.
-Edit handler.mjs and rebuild when changing API behavior, then update the artwork
-count and date above.
+After changing `handler.mjs`, rerun `build_catalog.py` so `worker.mjs` picks up
+the change. `npm run check` does a Cloudflare deployment dry run.
 
-Source: https://github.com/NationalGalleryOfArt/opendata
-Dictionary: https://github.com/NationalGalleryOfArt/opendata/blob/main/documentation/Data%20Dictionary.txt
-Image policy: https://www.nga.gov/artworks/free-images-and-open-access
-The catalog metadata is CC0; image selection follows NGA's separate open-access flag.
+## Data and licensing
 
-## Validation and deployment status
+- Collection data comes from NGA's [Open Data program](https://github.com/NationalGalleryOfArt/opendata)
+  and is released under [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Field definitions are in the
+  [data dictionary](https://github.com/NationalGalleryOfArt/opendata/blob/main/documentation/Data%20Dictionary.txt).
+- Only images NGA marks as open access are included. See NGA's
+  [open access policy](https://www.nga.gov/artworks/free-images-and-open-access)
+  for how those images may be used.
+- "Highlights" are proxies derived from NGA's data, not an official NGA ranking.
 
-Run `npm test` for random-index rejection, size handling, redirects, cache
-headers, error responses, and a real bundled-catalog response. Run
-`npm run check` for a Cloudflare deployment dry run. Wrangler is pinned in
-package.json and package-lock.json.
+## License
+
+The code in this repository is available under the [MIT License](LICENSE).
+The bundled catalog is derived from NGA's CC0 open data.

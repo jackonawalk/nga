@@ -3,5 +3,6 @@
   "main": "worker.mjs",
   "compatibility_date": "2026-09-07",
   "workers_dev": true,
+  "routes": [{"pattern": "nga.jackonawalk.com", "custom_domain": true}],
   "observability": {"enabled": true}
 }
