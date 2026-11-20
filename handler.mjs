@@ -5,7 +5,8 @@ export function randomIndex(n, fill = a => crypto.getRandomValues(a)) {
   return value[0] % n;
 }
 
-export function handle(request, catalog) {
+// types: artwork type names indexed by each catalog entry's sixth field.
+export function handle(request, catalog, types = []) {
   const headers = {'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*'};
   const reply = (text, status = 200, extra = {}) => new Response(text, {
     status, headers: {...headers, 'Content-Type': 'text/plain; charset=utf-8', ...extra}
@@ -30,17 +31,32 @@ export function handle(request, catalog) {
     years[name] = Number(value);
   }
   if (years.from > years.to) return reply('from must not be after to', 400);
-  const pool = 'from' in years || 'to' in years ? catalog.filter(([, , , begin, end]) =>
-    begin != null && !(begin < years.from) && !(end > years.to)) : catalog;
+  // type accepts comma-separated names, e.g. painting,drawing; hyphens stand for spaces.
+  const typeParam = url.searchParams.get('type');
+  let wanted = null;
+  if (typeParam !== null) {
+    wanted = new Set();
+    for (const name of typeParam.toLowerCase().split(',')) {
+      const index = types.indexOf(name.trim().replaceAll('-', ' '));
+      if (index < 0) return reply(`type must be one or more of: ${
+        types.map(t => t.replaceAll(' ', '-')).join(', ')}`, 400);
+      wanted.add(index);
+    }
+  }
+  const dated = 'from' in years || 'to' in years;
+  const pool = dated || wanted ? catalog.filter(([, , , begin, end, type]) =>
+    (!dated || (begin != null && !(begin < years.from) && !(end > years.to)))
+    && (!wanted || wanted.has(type))) : catalog;
   if (!pool.length) return reply('No artworks match those filters', 404);
-  const [uuid, objectId, longestEdge, beginYear, endYear] = pool[randomIndex(pool.length)];
+  const [uuid, objectId, longestEdge, beginYear, endYear, typeIndex] = pool[randomIndex(pool.length)];
   const edge = Math.min(size, longestEdge);
   const imageUrl = `https://api.nga.gov/iiif/${uuid}/full/${size === 0 ? 'full' : `!${edge},${edge}`}/0/default.jpg`;
   if (url.pathname === '/image') return new Response(null, {
     status: 302, headers: {...headers, Location: imageUrl}
   });
   if (format === 'json') return reply(JSON.stringify({url: imageUrl, object_id: objectId,
-    begin_year: beginYear ?? null, end_year: endYear ?? null, open_access: true,
+    begin_year: beginYear ?? null, end_year: endYear ?? null,
+    type: types[typeIndex]?.replaceAll(' ', '-') ?? null, open_access: true,
     pool_size: pool.length}), 200, {'Content-Type': 'application/json'});
   return reply(imageUrl);
 }
