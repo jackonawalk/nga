@@ -1,12 +1,12 @@
 # Astra Art Shuffle
 
-A small API that selects uniformly from 58,261 distinct open-access NGA artworks.
+A small API that selects uniformly from 63,890 distinct open-access NGA artworks.
 The catalog is bundled on the server. Each request returns one URL, or redirects
 to one image; your phone never downloads or splits the catalog.
 
 ## Cloudflare Worker
 
-Extract this ZIP and open a terminal in the extracted nga-random-api folder:
+From the project folder:
 
 ```sh
 npm ci
@@ -14,11 +14,11 @@ npx wrangler login
 npm run deploy
 ```
 
-Node.js 22 or newer and a Cloudflare account are required. The Worker is named astra-art-shuffle. Wrangler prints the deployed
+Node.js 22 or newer and a Cloudflare account are required; the Workers Free plan
+is sufficient. The Worker is named astra-art-shuffle. Wrangler prints the deployed
 workers.dev URL. No database, KV binding, NGA API key, or secrets are required.
-For the Cloudflare browser editor, worker.mjs is also self-contained: its entire
-contents are the Worker code. The file is large because it includes the catalog;
-a project upload or CLI deployment is more convenient than copying it on a phone.
+worker.mjs is self-contained, but it is large because it includes the catalog,
+so deploy with the CLI rather than pasting it into the browser editor.
 
 Cloudflare deployment instructions:
 https://developers.cloudflare.com/workers/get-started/guide/
@@ -39,10 +39,16 @@ Replace YOUR_HOST with the actual hostname supplied by your hosting provider.
 
 - `https://YOUR_HOST/random` returns just a direct JPEG URL as plain text.
 - `https://YOUR_HOST/random?format=json` returns JSON with url, object_id,
-  open_access and pool_size fields.
+  begin_year, end_year, open_access and pool_size fields. pool_size is the
+  number of artworks matching any filters.
 - `https://YOUR_HOST/image` sends an HTTP 302 redirect to a random image.
 - Add `?size=3000` for a different maximum edge, or `?size=0` for full resolution.
   For JSON plus a size, use `?format=json&size=3000`.
+- Add `from` and/or `to` (years) to either endpoint to limit the creation date,
+  e.g. `/image?from=1850&to=1899` for late 19th-century art. An artwork matches
+  only if its whole recorded creation range falls inside the filter, so a work
+  dated 1845–1855 is excluded from 1850–1899. Undated works (a few dozen) never
+  match a year filter. If nothing matches, the response is 404.
 
 Default size is 2000 pixels on the longest edge, preserving aspect ratio without
 requesting an enlargement of smaller originals. Allowed sizes are 200–8000, or 0.
@@ -65,21 +71,25 @@ Landscape images may be cropped by the wallpaper action.
 
 ## Randomness and catalog maintenance
 
-The catalog snapshot was prepared from NGA data downloaded on 2026-09-06.
+The catalog snapshot was built from NGA data on 2026-11-20 (63,890 artworks).
 Only primary images marked openaccess=1 are included, one entry per artwork ID.
 Selection uses Web Crypto with rejection sampling to avoid modulo bias. Each run
 is independent, so repeats are possible. There is no artist or medium balancing.
 
-The API does not probe image availability, proxy image bytes, or refresh the
-catalog on each request. If NGA removes an image, run the shortcut again.
-To refresh, download published_images.csv from the official repository, run:
+The catalog does not refresh automatically. The API does not probe image
+availability or proxy image bytes; if NGA removes an image, run the shortcut again.
+To refresh, download published_images.csv and objects.csv from the official
+repository's data folder and run:
 
 ```sh
-python3 build_catalog.py /path/to/published_images.csv
+python3 build_catalog.py /path/to/published_images.csv /path/to/objects.csv
+npm test
+npm run deploy
 ```
 
-Then redeploy. build_catalog.py combines handler.mjs with the catalog to generate
-worker.mjs. Edit handler.mjs and rebuild when changing API behavior.
+build_catalog.py combines handler.mjs with the catalog to generate worker.mjs.
+Edit handler.mjs and rebuild when changing API behavior, then update the artwork
+count and date above.
 
 Source: https://github.com/NationalGalleryOfArt/opendata
 Dictionary: https://github.com/NationalGalleryOfArt/opendata/blob/main/documentation/Data%20Dictionary.txt
@@ -88,7 +98,7 @@ The catalog metadata is CC0; image selection follows NGA's separate open-access 
 
 ## Validation and deployment status
 
-Run `npm test` for the local checks: random-index rejection, size handling,
-redirects, cache headers, error responses, and a real bundled-catalog response.
-These checks passed under Node 24. Wrangler is pinned in package.json and package-lock.json. A deployment dry run could not complete here because network approval was cancelled. This project has not been deployed or tested
-in Cloudflare's runtime or Replit, and no public endpoint has been created here.
+Run `npm test` for random-index rejection, size handling, redirects, cache
+headers, error responses, and a real bundled-catalog response. Run
+`npm run check` for a Cloudflare deployment dry run. Wrangler is pinned in
+package.json and package-lock.json.
